@@ -1,39 +1,50 @@
+# 1. Make sure you have the right imports
 from __future__ import annotations
 import pendulum
 from airflow.decorators import dag, task
-from airflow.hooks.base import BaseHook
+from airflow.providers.http.hooks.http import HttpHook  # Import the HttpHook
 
+
+# 2. Use the @dag decorator with required arguments
 @dag(
-    dag_id="debug_connection_dag",
+    dag_id="my_first_dag",
     start_date=pendulum.datetime(2025, 7, 1, tz="UTC"),
     schedule=None,
     catchup=False,
-    tags=["debug"],
+    tags=["example", "cloudflare"],
 )
-def debug_connection_dag():
+def my_simple_dag():
+    """
+    A simple example DAG that now calls the Cloudflare API.
+    """
+
+    # We've renamed the task to be more descriptive
     @task
-    def inspect_connection_extras():
+    def get_cloudflare_zones():
         """
-        Fetches a connection and prints its Extras field to the logs
-        to verify its exact structure and content.
+        This task uses the HttpHook to call the Cloudflare API
+        and print the names of the zones found.
         """
-        print("--- Getting connection 'cloudflare_api_default' ---")
-        conn = BaseHook.get_connection("cloudflare_api_default")
+        # Instantiate the HttpHook, pointing to the connection you created
+        hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
 
-        print("\n1. Raw 'conn.extra' (the exact string from the database):")
-        # repr() is used to make hidden characters like \n or \t visible
-        print(repr(conn.extra))
+        # Execute the request to the /zones endpoint
+        print("Calling Cloudflare API to get zones...")
+        response = hook.run(endpoint='/client/v4/zones')
 
-        print("\n2. Parsed 'conn.extra_dejson' (the Python dictionary Airflow uses):")
-        print(conn.extra_dejson)
+        # Process the JSON response
+        data = response.json()
 
-        # Specifically check the headers part
-        if 'headers' in conn.extra_dejson:
-            print("\n3. The 'headers' object inside the dictionary:")
-            print(conn.extra_dejson['headers'])
-        else:
-            print("\n3. The 'headers' key was NOT found in the Extras dictionary.")
+        # Log the results
+        zone_names = [zone['name'] for zone in data['result']]
+        print(f"Successfully found {len(zone_names)} zones.")
+        print(f"Zone Names: {zone_names}")
 
-    inspect_connection_extras()
+        return zone_names
 
-debug_connection_dag()
+    # Call the task function to add it to the DAG
+    get_cloudflare_zones()
+
+
+# 3. CRITICAL: You must call the function at the end to create the DAG object.
+my_simple_dag()
