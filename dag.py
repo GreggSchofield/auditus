@@ -1,6 +1,5 @@
 from __future__ import annotations
 import pendulum
-import json
 from airflow.decorators import dag, task
 from airflow.hooks.base import BaseHook
 
