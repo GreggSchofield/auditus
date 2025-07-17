@@ -28,9 +28,15 @@ def my_simple_dag():
         # Instantiate the HttpHook, pointing to the connection you created
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
 
+        # Define your query parameters as a dictionary
+        query_params = {
+            "per_page": 50,
+            "status": "active"
+        }
+
         # Execute the request to the /zones endpoint
         print("Calling Cloudflare API to get zones...")
-        response = hook.run(endpoint='/client/v4/zones')
+        response = hook.run(endpoint='/client/v4/zones', data=query_params)
 
         # Process the JSON response
         data = response.json()
