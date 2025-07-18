@@ -58,30 +58,32 @@ def cloudflare_paginated_dag():
         return all_zones
     
     @task(pool="cloudflare_api_pool")
-    def check_tiered_caching(zone: dict) -> dict:
+    def check_argo_routing(zone: dict) -> dict:
         """
-        Takes a single zone dictionary, checks its tiered caching status,
-        and returns the result.
+        Takes a single zone and checks its Argo Smart Routing status,
+        gracefully handling zones where Argo is not applicable.
         """
         zone_id = zone['id']
         zone_name = zone['name']
+        argo_status = "not_applicable"  # Default status
+
+        try:
+            hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
+            endpoint = f"/client/v4/zones/{zone_id}/argo"
+            response = hook.run(endpoint=endpoint)
+            data = response.json()
+
+            if data.get('success'):
+                # This task PRODUCES the 'argo_status' key
+                argo_status = data['result']['value']
+            else:
+                print(f"WARNING: Zone '{zone_name}' -> Could not retrieve Argo status. API success=false.")
         
-        hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
-        endpoint = f"/client/v4/zones/{zone_id}/argo/tiered_caching"
-        
-        response = hook.run(endpoint=endpoint)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        caching_status = data['result']['value']
-        
-        print(f"Zone: '{zone_name}' -> Tiered Caching is '{caching_status}'")
-        
-        return {
-            "zone_name": zone_name,
-            "tiered_caching_status": caching_status
-        }
+        except Exception as e:
+            print(f"WARNING: Zone '{zone_name}' -> Could not retrieve Argo status. Error: {e}")
+
+        # Ensure the returned dictionary always uses the correct key
+        return {"zone_name": zone_name, "argo_status": argo_status}
     
     @task
     def summarize_argo_status(results: list[dict]):
@@ -90,19 +92,17 @@ def cloudflare_paginated_dag():
         """
         print("--- Argo Routing Audit Summary ---")
         
-        # 1. Create a new list containing only the names of zones where Argo is 'off'.
+        # This task CONSUMES the 'argo_status' key
         disabled_zones = [
-            result['zone_name'] for result in results if result['argo_status'] == 'off'
+            result['zone_name'] for result in results if result.get('argo_status') == 'off'
         ]
         
-        # 2. Check if the list of disabled zones has any domains in it.
         if disabled_zones:
             print(f"Found {len(disabled_zones)} zones with Argo Routing DISABLED:")
-            # 3. Print each domain name on a new line for readability.
             for zone_name in disabled_zones:
                 print(f"- {zone_name}")
         else:
-            print("✅ All zones have Argo Routing enabled. No action needed.")
+            print("✅ All zones have Argo Routing enabled or are not applicable.")
             
         print("--- End of Summary ---")
 
@@ -112,7 +112,7 @@ def cloudflare_paginated_dag():
     all_zones = combine_results(zone_lists)
 
     # Map-Reduce Configurations per Zone
-    tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
+    tiered_caching_results = check_argo_routing.expand(zone=all_zones)
     summarize_argo_status(tiered_caching_results)
 
 
