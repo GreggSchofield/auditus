@@ -84,15 +84,26 @@ def cloudflare_paginated_dag():
         }
     
     @task
-    def log_final_summary(results: list[dict]):
-        """This is the final 'reduce' step to see all the results."""
-        print("--- Tiered Caching Audit Summary ---")
-        # You could add logic here to write to a Google Sheet
-        on_count = sum(1 for r in results if r['tiered_caching_status'] == 'on')
-        off_count = len(results) - on_count
-        print(f"Total zones checked: {len(results)}")
-        print(f"Zones with Tiered Caching ON: {on_count}")
-        print(f"Zones with Tiered Caching OFF: {off_count}")
+    def summarize_argo_status(results: list[dict]):
+        """
+        Summarizes the audit and prints a list of non-compliant zones.
+        """
+        print("--- Argo Routing Audit Summary ---")
+        
+        # 1. Create a new list containing only the names of zones where Argo is 'off'.
+        disabled_zones = [
+            result['zone_name'] for result in results if result['argo_status'] == 'off'
+        ]
+        
+        # 2. Check if the list of disabled zones has any domains in it.
+        if disabled_zones:
+            print(f"Found {len(disabled_zones)} zones with Argo Routing DISABLED:")
+            # 3. Print each domain name on a new line for readability.
+            for zone_name in disabled_zones:
+                print(f"- {zone_name}")
+        else:
+            print("✅ All zones have Argo Routing enabled. No action needed.")
+            
         print("--- End of Summary ---")
 
     # Map-Reduce Cloudflare Zones
@@ -102,7 +113,7 @@ def cloudflare_paginated_dag():
 
     # Map-Reduce Configurations per Zone
     tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
-    log_final_summary(tiered_caching_results)
+    summarize_argo_status(tiered_caching_results)
 
 
 cloudflare_paginated_dag()
