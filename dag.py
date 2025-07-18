@@ -18,21 +18,24 @@ def cloudflare_paginated_dag():
     @task
     def get_total_pages() -> list[int]:
         """
-        Makes one API call to find the number of pages for a specific account.
+        Makes one API call to find the total number of zones and correctly
+        calculates the number of pages needed.
         """
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
-        
         account_id = Variable.get("cloudflare_account_id")
-        
         params = {"per_page": 1, "account.id": account_id}
         
         response = hook.run(endpoint='/client/v4/zones', data=params)
         data = response.json()
         
-        total_pages = data['result_info']['total_pages']
-        print(f"Account {account_id} has {data['result_info']['total_count']} zones. Total pages: {total_pages}")
+        total_zones = data['result_info']['total_count']
+        per_page = 50
         
-        return list(range(1, total_pages + 1))
+        total_pages_calculated = math.ceil(total_zones / per_page)
+        
+        print(f"Account {account_id} has {total_zones} zones. Calculated pages: {total_pages_calculated}")
+        
+        return list(range(1, total_pages_calculated + 1))
 
     @task
     def get_one_page_of_zones(page_number: int) -> list[dict]:
@@ -40,14 +43,10 @@ def cloudflare_paginated_dag():
         Fetches a single page of zones for a specific account.
         """
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
-        
         account_id = Variable.get("cloudflare_account_id")
-        
         params = {"per_page": 50, "page": page_number, "account.id": account_id}
-        
         response = hook.run(endpoint='/client/v4/zones', data=params)
         response.raise_for_status()
-        
         return response.json()['result']
         
     @task
