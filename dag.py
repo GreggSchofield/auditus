@@ -38,9 +38,9 @@ def cloudflare_paginated_dag():
         return list(range(1, total_pages_calculated + 1))
 
     @task
-    def get_one_page_of_zones(page_number: int) -> list[dict]: # Return type is list[dict] again
+    def get_one_page_of_zones(page_number: int) -> list[str]:
         """
-        Fetches a single page of zones for a specific account.
+        Fetches a single page of zones and returns only their names.
         """
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
         account_id = Variable.get("cloudflare_account_id")
@@ -49,7 +49,11 @@ def cloudflare_paginated_dag():
         response = hook.run(endpoint='/client/v4/zones', data=params)
         response.raise_for_status()
         
-        return response.json()['result']
+        data = response.json()
+        
+        zone_names = [zone['name'] for zone in data['result']]
+        
+        return zone_names
         
     @task
     def combine_results(list_of_zone_lists: list[list[dict]]):
