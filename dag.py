@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import pendulum
 from airflow.decorators import dag, task
 from airflow.providers.http.hooks.http import HttpHook
@@ -9,73 +8,61 @@ from airflow.providers.http.hooks.http import HttpHook
     start_date=pendulum.datetime(2025, 7, 18, tz="UTC"),
     schedule=None,
     catchup=False,
-    tags=["example", "cloudflare", "dynamic"],
+    tags=["cloudflare", "dynamic"],
 )
 def cloudflare_paginated_dag():
-    """
-    This DAG dynamically fetches all pages of Cloudflare zones in parallel
-    using the HttpHook and Dynamic Task Mapping.
-    """
-
+    
     @task
     def get_total_pages() -> list[int]:
         """
-        Makes one API call to find the total number of pages and returns
-        a list of page numbers to be fetched.
+        Makes one API call to find out how many pages to fetch.
         """
         print("--- Determining total number of pages ---")
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
-        
-        # We only need 1 result to get the 'result_info' containing page counts
         response = hook.run(endpoint='/client/v4/zones', data={"per_page": 1})
         data = response.json()
         
         total_pages = data['result_info']['total_pages']
         print(f"Total pages to fetch: {total_pages}")
         
-        # Return a list of page numbers, e.g., [1, 2, 3]
+        # This task returns a SHORT list of page numbers, e.g., [1, 2, 3]
         return list(range(1, total_pages + 1))
 
     @task
     def get_one_page_of_zones(page_number: int) -> list[str]:
         """
-        This task is dynamically mapped. It fetches a single page of zones.
+        Fetches a single page of 50 zones. This task will be
+        cloned N times, where N is the number of pages.
         """
         print(f"--- Fetching page {page_number} of zones ---")
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
-        
-        # Pass the page number and desired page size to the API call
         params = {"per_page": 50, "page": page_number}
         response = hook.run(endpoint='/client/v4/zones', data=params)
         response.raise_for_status()
 
         data = response.json()
+        # This task returns a list of up to 50 zone names
         zone_names = [zone['name'] for zone in data['result']]
-        print(f"Page {page_number}: Found {len(zone_names)} zones.")
         return zone_names
         
     @task
     def combine_results(list_of_zone_lists: list[list[str]]):
         """
-        This "reduce" task takes the list of lists from the mapped tasks
-        and flattens it into a single list of all zones.
+        Combines the lists of zones from each page fetch.
         """
         print("--- Combining all results ---")
-        
         all_zones = [zone for sublist in list_of_zone_lists for zone in sublist]
-        
         print(f"Total zones found across all pages: {len(all_zones)}")
-        print(f"Final list: {all_zones}")
-        
         return all_zones
 
-    # Define the workflow
+    # This is the crucial part of the workflow
     page_numbers = get_total_pages()
     
-    # "Map" step: Creates parallel tasks based on the list of page numbers
+    # .expand() is called on the SHORT list of page numbers ([1, 2, 3])
+    # This creates exactly 3 parallel tasks.
     zone_lists = get_one_page_of_zones.expand(page_number=page_numbers)
     
-    # "Reduce" step: Collects all the results into a final list
+    # The final task just combines the results from those 3 tasks.
     combine_results(zone_lists)
 
 cloudflare_paginated_dag()
