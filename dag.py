@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pendulum
+import math
 from airflow.decorators import dag, task
 from airflow.providers.http.hooks.http import HttpHook
 
@@ -15,18 +16,27 @@ def cloudflare_paginated_dag():
     @task
     def get_total_pages() -> list[int]:
         """
-        Makes one API call to find out how many pages to fetch.
+        Makes 1 API call to find the total number of zones and correctly
+        calculates the number of pages needed.
         """
         print("--- Determining total number of pages ---")
         hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
+        
+        # Fetch with per_page=1 to be efficient
         response = hook.run(endpoint='/client/v4/zones', data={"per_page": 1})
         data = response.json()
         
-        total_pages = data['result_info']['total_pages']
-        print(f"Total pages to fetch: {total_pages}")
+        # The API provides total_count, not total_pages
+        total_zones = data['result_info']['total_count']
+        per_page = 50 # The page size we'll use for fetching
         
-        # This task returns a SHORT list of page numbers, e.g., [1, 2, 3]
-        return list(range(1, total_pages + 1))
+        # Correctly calculate the number of pages using math.ceil()
+        total_pages_calculated = math.ceil(total_zones / per_page)
+        
+        print(f"Total zones: {total_zones}. Calculated pages to fetch: {total_pages_calculated}")
+        
+        # Return a list of page numbers, e.g., for 146 zones this will be [1, 2, 3]
+        return list(range(1, total_pages_calculated + 1))
 
     @task
     def get_one_page_of_zones(page_number: int) -> list[str]:
