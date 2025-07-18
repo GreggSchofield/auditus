@@ -60,9 +60,53 @@ def cloudflare_paginated_dag():
         all_zones = [zone for sublist in list_of_zone_lists for zone in sublist]
         print(f"Total zones found for this account: {len(all_zones)}")
         return all_zones
+    
+    @task(pool="cloudflare_api_pool")
+    def check_tiered_caching(zone: dict) -> dict:
+        """
+        Takes a single zone dictionary, checks its tiered caching status,
+        and returns the result.
+        """
+        zone_id = zone['id']
+        zone_name = zone['name']
+        
+        hook = HttpHook(method='GET', http_conn_id='cloudflare_api_default')
+        endpoint = f"/client/v4/zones/{zone_id}/argo/tiered_caching"
+        
+        response = hook.run(endpoint=endpoint)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        caching_status = data['result']['value']
+        
+        print(f"Zone: '{zone_name}' -> Tiered Caching is '{caching_status}'")
+        
+        return {
+            "zone_name": zone_name,
+            "tiered_caching_status": caching_status
+        }
+    
+    @task
+    def log_final_summary(results: list[dict]):
+        """This is the final 'reduce' step to see all the results."""
+        print("--- Tiered Caching Audit Summary ---")
+        # You could add logic here to write to a Google Sheet
+        on_count = sum(1 for r in results if r['tiered_caching_status'] == 'on')
+        off_count = len(results) - on_count
+        print(f"Total zones checked: {len(results)}")
+        print(f"Zones with Tiered Caching ON: {on_count}")
+        print(f"Zones with Tiered Caching OFF: {off_count}")
+        print("--- End of Summary ---")
 
+    # Map-Reduce Cloudflare Zones
     page_numbers = get_total_pages()
     zone_lists = get_one_page_of_zones.expand(page_number=page_numbers)
-    combine_results(zone_lists)
+    all_zones = combine_results(zone_lists)
+
+    # Map-Reduce Configurations per Zone
+    tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
+    log_final_summary(tiered_caching_results)
+
 
 cloudflare_paginated_dag()
