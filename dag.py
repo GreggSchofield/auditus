@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pendulum
 import math
+from airflow.providers.google.suite.hooks.sheets import GoogleSheetsHook
 from airflow.decorators import dag, task
 from airflow.providers.http.hooks.http import HttpHook
 from airflow.models.variable import Variable
@@ -94,6 +95,22 @@ def cloudflare_paginated_dag():
         print(f"Zones with Tiered Caching ON: {on_count}")
         print(f"Zones with Tiered Caching OFF: {off_count}")
         print("--- End of Summary ---")
+    
+    @task
+    def create_google_sheet():
+        """
+        Creates a new Google Sheet named 'created-by-airflow-greggschofield'
+        using the GCP Service Account connection.
+        """
+        hook = GoogleSheetsHook(gcp_conn_id="teg_google_workspace_sheets_sa")
+        spreadsheet = {
+            "properties": {
+                "title": "created-by-airflow-greggschofield"
+            }
+        }
+        response = hook.create_spreadsheet(spreadsheet)
+        print(f"Created spreadsheet with ID: {response['spreadsheetId']}")
+        return response['spreadsheetId']
 
     # Map-Reduce Cloudflare Zones
     page_numbers = get_total_pages()
@@ -103,6 +120,7 @@ def cloudflare_paginated_dag():
     # Map-Reduce Configurations per Zone
     tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
     log_final_summary(tiered_caching_results)
+    create_google_sheet()
 
 
 cloudflare_paginated_dag()
