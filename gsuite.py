@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pendulum
 from airflow.decorators import dag, task
-from airflow.providers.google.suite.hooks.sheets import GoogleSheetsHook
+from airflow.providers.google.suite.hooks.sheets import GSheetsHook
 
 @dag(
     dag_id="google_sheets_creation_test",
@@ -23,8 +23,8 @@ def google_sheets_test_dag():
             print("Attempting to create a Google Sheet...")
             
             # 1. Instantiate the hook, pointing to your GCP connection ID
-            hook = GoogleSheetsHook(gcp_conn_id="teg_google_workspace_sheets_sa")
-            
+            hook = GSheetsHook(gcp_conn_id="teg_google_workspace_sheets_sa")
+
             # 2. Define the properties for the new spreadsheet
             spreadsheet_properties = {
                 "properties": {"title": "Airflow Test Sheet - Success!"}
