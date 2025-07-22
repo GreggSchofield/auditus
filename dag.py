@@ -5,6 +5,7 @@ import math
 from airflow.decorators import dag, task
 from airflow.providers.http.hooks.http import HttpHook
 from airflow.models.variable import Variable
+from airflow.providers.google.suite.hooks.sheets import GoogleSheetsHook
 
 @dag(
     dag_id="cloudflare_dynamic_zone_fetch",
@@ -95,14 +96,44 @@ def cloudflare_paginated_dag():
         print(f"Zones with Tiered Caching OFF: {off_count}")
         print("--- End of Summary ---")
 
+    @task
+    def create_google_sheet():
+        """
+        Creates a new Google Sheet named 'created-by-airflow-greggschofield'
+        using the GCP Service Account connection.
+        """
+        try:
+            print("Starting Google Sheet creation task")
+            hook = GoogleSheetsHook(gcp_conn_id="teg_google_workspace_sheets_sa")
+            
+            spreadsheet = {
+                "properties": {
+                    "title": "created-by-airflow-greggschofield"
+                }
+            }
+            
+            response = hook.create_spreadsheet(spreadsheet)
+            spreadsheet_id = response['spreadsheetId']
+            print(f"Successfully created Google Sheet with ID: {spreadsheet_id}")
+            print(f"Access your sheet at: https://docs.google.com/spreadsheets/d/{spreadsheet_id}")
+            return spreadsheet_id
+        except Exception as e:
+            print(f"Error creating Google Sheet: {str(e)}")
+            raise
+
     # Map-Reduce Cloudflare Zones
     page_numbers = get_total_pages()
     zone_lists = get_one_page_of_zones.expand(page_number=page_numbers)
     all_zones = combine_results(zone_lists)
 
-    # Map-Reduce Configurations per Zone
+   # Map-Reduce Configurations per Zone
     tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
-    log_final_summary(tiered_caching_results)
-
+    summary = log_final_summary(tiered_caching_results)
+    
+    # Final task - create Google Sheet
+    sheet_id = create_google_sheet()
+    
+    # Set dependencies to ensure the sheet is created last
+    summary >> sheet_id
 
 cloudflare_paginated_dag()
