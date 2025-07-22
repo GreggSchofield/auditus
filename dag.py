@@ -119,8 +119,13 @@ def cloudflare_paginated_dag():
 
     # Map-Reduce Configurations per Zone
     tiered_caching_results = check_tiered_caching.expand(zone=all_zones)
-    log_final_summary(tiered_caching_results)
-    create_google_sheet()
+    summary = log_final_summary(tiered_caching_results)
+    
+    # Create Google Sheet after summary
+    sheet_id = create_google_sheet()
+    
+    # Define dependencies explicitly
+    summary >> sheet_id
 
 
 cloudflare_paginated_dag()
